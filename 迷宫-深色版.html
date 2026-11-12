@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>随机迷宫</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px;
+    background:
+      radial-gradient(900px 480px at 50% -8%, rgba(70, 96, 130, .30), transparent 70%),
+      #0a0e14;
+    color: #e6edf5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { width: min(92vw, 560px); }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .toolbar .btn { margin-left: auto; }
+
+  .seg {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 11px;
+    background: rgba(26, 37, 54, .7);
+    border: 1px solid rgba(96, 125, 160, .18);
+  }
+
+  .seg-btn {
+    border: 0;
+    background: transparent;
+    padding: 6px 11px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #8ba0bb;
+    cursor: pointer;
+    transition: background .18s, color .18s;
+  }
+
+  .seg-btn:hover { color: #cfe0f5; background: rgba(255, 255, 255, .05); }
+
+  .seg-btn.is-active {
+    color: #0b1521;
+    background: linear-gradient(180deg, #8fc0ea, #5b93c6);
+    box-shadow: 0 4px 12px -6px rgba(91, 147, 198, .9);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: #cfe0f5;
+    white-space: nowrap;
+  }
+
+  .brand .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6b9ad0;
+    box-shadow: 0 0 10px rgba(107, 154, 208, .7);
+  }
+
+  .stats {
+    display: flex;
+    gap: 8px;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.2;
+    padding: 6px 12px;
+    min-width: 76px;
+    border-radius: 10px;
+    background: rgba(26, 37, 54, .7);
+    border: 1px solid rgba(96, 125, 160, .18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 18px -14px rgba(0, 0, 0, .95);
+  }
+
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: .16em;
+    color: #7f93ad;
+  }
+
+  .stat .value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e9f1fb;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: #04121f;
+    background: linear-gradient(180deg, #7fb2dd, #4c86bb);
+    box-shadow: 0 8px 20px -8px rgba(76, 134, 187, .85),
+                inset 0 1px 0 rgba(255, 255, 255, .45),
+                inset 0 -1px 0 rgba(0, 0, 0, .18);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: filter .18s, transform .12s;
+  }
+
+  .btn:hover { filter: brightness(1.12); }
+  .btn:active { transform: translateY(1px); }
+
+  .board {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #0d131b;
+    box-shadow:
+      0 0 0 1px rgba(96, 125, 160, .25),
+      0 30px 60px -30px rgba(0, 0, 0, .95),
+      inset 0 0 60px rgba(0, 0, 0, .5);
+  }
+
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 7, 12, .42);
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity .28s ease;
+  }
+
+  .overlay.show { opacity: 1; pointer-events: auto; }
+
+  .panel {
+    text-align: center;
+    cursor: default;
+    padding: 26px 32px;
+    border-radius: 16px;
+    background: rgba(15, 23, 35, .94);
+    border: 1px solid rgba(96, 125, 160, .28);
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .9);
+    transform: translateY(10px) scale(.96);
+    transition: transform .28s cubic-bezier(.2, .9, .3, 1.2);
+  }
+
+  .overlay.show .panel { transform: translateY(0) scale(1); }
+
+  .panel h2 {
+    margin: 0 0 8px;
+    font-size: 26px;
+    letter-spacing: .2em;
+    text-indent: .2em;
+    color: #cfe2f5;
+    text-shadow: 0 0 24px rgba(107, 154, 208, .45);
+  }
+
+  .panel p {
+    margin: 0 0 20px;
+    font-size: 13px;
+    color: #8ba1bd;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hint {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: .03em;
+    color: #6b7f99;
+  }
+
+  @media (max-width: 430px) {
+    .brand { font-size: 14px; }
+    .stat { min-width: 62px; padding: 5px 9px; }
+    .stat .value { font-size: 14px; }
+    .btn { padding: 9px 12px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>随机迷宫</div>
+    <div class="seg" role="group" aria-label="迷宫尺寸">
+      <button class="seg-btn" data-size="10" type="button">10×10</button>
+      <button class="seg-btn is-active" data-size="15" type="button">15×15</button>
+      <button class="seg-btn" data-size="20" type="button">20×20</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="stats">
+      <div class="stat"><span class="label">步数</span><span class="value" id="steps">0</span></div>
+      <div class="stat"><span class="label">最佳</span><span class="value" id="best">—</span></div>
+      <div class="stat"><span class="label">用时</span><span class="value" id="time">00:00.0</span></div>
+    </div>
+    <button class="btn" id="regen" type="button">重新生成</button>
+  </div>
+
+  <div class="board" id="board">
+    <canvas id="maze"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="panel">
+        <h2>通关</h2>
+        <p id="result"></p>
+        <button class="btn" id="again" type="button">再来一局</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">方向键 或 W A S D 移动 · 从左上角出发，抵达右下角</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- 配置 ---------- */
+  var N = 15;                 // 迷宫边长（格），可切换 10 / 15 / 20
+  var TOP = 1, RIGHT = 2, BOTTOM = 4, LEFT = 8;  // 四面墙的位标记
+
+  /* ---------- DOM ---------- */
+  var boardEl   = document.getElementById('board');
+  var canvas    = document.getElementById('maze');
+  var ctx       = canvas.getContext('2d');
+
+  // 静态层（地面 + 墙）缓存，只在尺寸变化时重画一次
+  var bgCanvas  = document.createElement('canvas');
+  var bgCtx     = bgCanvas.getContext('2d');
+  var stepsEl   = document.getElementById('steps');
+  var bestEl    = document.getElementById('best');
+  var timeEl    = document.getElementById('time');
+  var overlayEl = document.getElementById('overlay');
+  var resultEl  = document.getElementById('result');
+
+  /* ---------- 状态 ---------- */
+  var walls = null;           // Uint8Array(N*N)，每一位代表一面墙
+  var px = 0, py = 0;         // 小人格子坐标
+  var steps = 0;
+  var cellPx = 20;            // 每格边长（CSS 像素）
+  var timerOn = false;        // 计时是否在跑
+  var t0 = 0;                 // 本次计时起点
+  var accumMs = 0;            // 已累计毫秒
+  var won = false;
+  var path = [];              // 走过的格子坐标，用于通关后画轨迹
+  var lastKeyAt = 0;
+  var lastTimeText = '';
+
+  /* ---------- 最佳步数（按难度分别保存） ---------- */
+  function bestKey() {
+    return 'maze_best_steps_' + N;
+  }
+
+  function loadBest() {
+    var v = null;
+    try {
+      var raw = window.localStorage.getItem(bestKey());
+      var n = parseInt(raw, 10);
+      v = isNaN(n) ? null : n;
+    } catch (e) {
+      v = null;              // 无痕模式或禁用存储时静默降级
+    }
+    bestEl.textContent = v === null ? '—' : String(v);
+    return v;
+  }
+
+  function saveBest(v) {
+    try {
+      window.localStorage.setItem(bestKey(), String(v));
+    } catch (e) { /* 存不了就算了，不影响玩 */ }
+  }
+
+  /* ---------- 迷宫生成：递归回溯 ---------- */
+  function generateMaze() {
+    walls = new Uint8Array(N * N).fill(TOP | RIGHT | BOTTOM | LEFT);
+    var visited = new Uint8Array(N * N);
+    var stack = [0];
+    visited[0] = 1;
+
+    var dirs = [
+      { dx: 0,  dy: -1, w: TOP,    opp: BOTTOM },
+      { dx: 1,  dy: 0,  w: RIGHT,  opp: LEFT   },
+      { dx: 0,  dy: 1,  w: BOTTOM, opp: TOP    },
+      { dx: -1, dy: 0,  w: LEFT,   opp: RIGHT  }
+    ];
+
+    while (stack.length) {
+      var cur = stack[stack.length - 1];
+      var cx = cur % N, cy = (cur / N) | 0;
+      var opts = [];
+
+      for (var i = 0; i < 4; i++) {
+        var d = dirs[i];
+        var nx = cx + d.dx, ny = cy + d.dy;
+        if (nx >= 0 && nx < N && ny >= 0 && ny < N) {
+          var ni = ny * N + nx;
+          if (!visited[ni]) opts.push({ idx: ni, d: d });
+        }
+      }
+
+      if (opts.length === 0) { stack.pop(); continue; }
+
+      var pick = opts[(Math.random() * opts.length) | 0];
+      walls[cur] &= ~pick.d.w;        // 打通当前格
+      walls[pick.idx] &= ~pick.d.opp; // 打通相邻格
+      visited[pick.idx] = 1;
+      stack.push(pick.idx);
+    }
+  }
+
+  /* ---------- 新开一局 ---------- */
+  function newGame() {
+    generateMaze();
+    px = 0; py = 0;
+    steps = 0;
+    timerOn = false;
+    t0 = 0;
+    accumMs = 0;
+    won = false;
+    path = [[0, 0]];           // 轨迹从起点开始
+    lastKeyAt = 0;
+    lastTimeText = '';
+
+    overlayEl.classList.remove('show');
+    stepsEl.textContent = '0';
+    timeEl.textContent = '00:00.0';
+    loadBest();
+
+    resize();
+  }
+
+  /* ---------- 移动 ---------- */
+  function move(dx, dy) {
+    if (won) return;
+
+    if (!timerOn) {           // 第一次操作开始计时
+      timerOn = true;
+      t0 = performance.now();
+    }
+
+    var cur = py * N + px;
+    var w = dx === 1 ? RIGHT : dx === -1 ? LEFT : dy === 1 ? BOTTOM : TOP;
+
+    if (walls[cur] & w) return;   // 撞墙，走不过去
+
+    px += dx;
+    py += dy;
+    steps++;
+    path.push([px, py]);
+    stepsEl.textContent = String(steps);
+
+    if (px === N - 1 && py === N - 1) win();
+  }
+
+  function win() {
+    won = true;
+    accumMs = elapsed();
+    timerOn = false;
+
+    var prevBest = loadBest();
+    if (prevBest === null || steps < prevBest) {
+      saveBest(steps);
+      bestEl.textContent = String(steps);
+      resultEl.textContent = '共 ' + steps + ' 步 · 新纪录！用时 ' + fmt(accumMs);
+    } else {
+      resultEl.textContent = '共 ' + steps + ' 步 · 最佳 ' + prevBest + ' 步 · 用时 ' + fmt(accumMs);
+    }
+
+    overlayEl.classList.add('show');
+  }
+
+  /* ---------- 计时 ---------- */
+  function elapsed() {
+    return timerOn ? accumMs + (performance.now() - t0) : accumMs;
+  }
+
+  function fmt(ms) {
+    var total = ms / 1000;
+    var m = Math.floor(total / 60);
+    var s = Math.floor(total % 60);
+    var d = Math.floor(total * 10) % 10;
+    return pad2(m) + ':' + pad2(s) + '.' + d;
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  function updateClock() {
+    var text = fmt(elapsed());
+    if (text !== lastTimeText) {
+      lastTimeText = text;
+      timeEl.textContent = text;
+    }
+  }
+
+  /* ---------- 尺寸自适应 ---------- */
+  function resize() {
+    if (!walls) return;
+    var size = boardEl.clientWidth;
+    if (size <= 0) return;
+
+    var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cellPx = size / N;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    buildStaticLayer(size, dpr);
+
+    draw(performance.now());
+  }
+
+  /* ---------- 静态层：地面 + 立体墙（只重绘一次） ---------- */
+  function buildStaticLayer(size, dpr) {
+    bgCanvas.width = Math.round(size * dpr);
+    bgCanvas.height = Math.round(size * dpr);
+
+    var c = bgCtx;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, size, size);
+
+    var S = cellPx * N;
+
+    // 地面：中心亮、四周沉下去，做出空间感
+    var base = c.createRadialGradient(S * 0.38, S * 0.3, S * 0.04, S * 0.5, S * 0.52, S * 0.82);
+    base.addColorStop(0, '#1b2836');
+    base.addColorStop(0.55, '#0f1721');
+    base.addColorStop(1, '#06090e');
+    c.fillStyle = base;
+    c.fillRect(0, 0, S, S);
+
+    // 极淡棋盘格，帮助感知格子
+    c.fillStyle = 'rgba(255, 255, 255, .016)';
+    for (var y = 0; y < N; y++) {
+      for (var x = 0; x < N; x++) {
+        if ((x + y) % 2 === 0) c.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+      }
+    }
+
+    // 把所有墙线合成一条路径
+    var lw = Math.max(1.8, Math.min(cellPx * 0.14, 6));
+    c.beginPath();
+    for (var gy = 0; gy < N; gy++) {
+      for (var gx = 0; gx < N; gx++) {
+        var wb = walls[gy * N + gx];
+        var x0 = gx * cellPx, y0 = gy * cellPx;
+        var x1 = x0 + cellPx, y1 = y0 + cellPx;
+        if (wb & TOP)    { c.moveTo(x0, y0); c.lineTo(x1, y0); }
+        if (wb & LEFT)   { c.moveTo(x0, y0); c.lineTo(x0, y1); }
+        if (wb & RIGHT)  { c.moveTo(x1, y0); c.lineTo(x1, y1); }
+        if (wb & BOTTOM) { c.moveTo(x0, y1); c.lineTo(x1, y1); }
+      }
+    }
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+
+    // 1) 底部投影：让墙看起来离开地面
+    c.save();
+    c.translate(0, lw * 0.6);
+    c.lineWidth = lw * 1.2;
+    c.strokeStyle = 'rgba(2, 5, 9, .9)';
+    c.stroke();
+    c.restore();
+
+    // 2) 墙体主体（带轻微外发光）
+    c.save();
+    c.lineWidth = lw;
+    c.strokeStyle = '#4a6d92';
+    c.shadowColor = 'rgba(84, 119, 158, .35)';
+    c.shadowBlur = lw * 1.6;
+    c.stroke();
+    c.restore();
+
+    // 3) 顶部高光：受光面
+    c.save();
+    c.translate(0, -lw * 0.34);
+    c.lineWidth = Math.max(1, lw * 0.32);
+    c.strokeStyle = 'rgba(180, 216, 255, .35)';
+    c.stroke();
+    c.restore();
+  }
+
+  /* ---------- 绘制 ---------- */
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function draw(ts) {
+    if (!walls) return;
+
+    var S = cellPx * N;
+    ctx.clearRect(0, 0, S, S);
+
+    // 贴静态层（地面 + 墙）
+    if (bgCanvas.width > 0) ctx.drawImage(bgCanvas, 0, 0, S, S);
+
+    // 终点：光晕 + 呼吸环 + 渐变方块
+    var pulse = 0.5 + 0.5 * Math.sin(ts / 420);
+    var ex = (N - 1) * cellPx + cellPx / 2;
+    var ey = (N - 1) * cellPx + cellPx / 2;
+
+    var halo = ctx.createRadialGradient(ex, ey, cellPx * 0.04, ex, ey, cellPx * 0.9);
+    halo.addColorStop(0, 'rgba(61, 225, 170, ' + (0.32 + 0.14 * pulse).toFixed(3) + ')');
+    halo.addColorStop(1, 'rgba(61, 225, 170, 0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(ex - cellPx, ey - cellPx, cellPx * 2, cellPx * 2);
+
+    ctx.beginPath();
+    ctx.arc(ex, ey, cellPx * (0.3 + 0.045 * pulse), 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(110, 245, 197, ' + (0.45 + 0.25 * pulse).toFixed(3) + ')';
+    ctx.lineWidth = Math.max(1.2, cellPx * 0.05);
+    ctx.stroke();
+
+    var eg = ctx.createLinearGradient(ex - cellPx * 0.2, ey - cellPx * 0.2,
+                                      ex + cellPx * 0.2, ey + cellPx * 0.2);
+    eg.addColorStop(0, '#a6f7d6');
+    eg.addColorStop(1, '#1f9d76');
+    ctx.fillStyle = eg;
+    roundRect(ctx, ex - cellPx * 0.2, ey - cellPx * 0.2, cellPx * 0.4, cellPx * 0.4, cellPx * 0.12);
+    ctx.fill();
+
+    // 起点（淡色小方块 + 描边）
+    ctx.fillStyle = 'rgba(148, 163, 184, .14)';
+    roundRect(ctx, cellPx * 0.31, cellPx * 0.31, cellPx * 0.38, cellPx * 0.38, cellPx * 0.11);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(148, 170, 200, .25)';
+    ctx.lineWidth = Math.max(1, cellPx * 0.03);
+    ctx.stroke();
+
+    // 通关后：把走过的轨迹连成一条发光线
+    if (won && path.length > 1) {
+      ctx.save();
+      ctx.beginPath();
+      for (var pi = 0; pi < path.length; pi++) {
+        var tx = path[pi][0] * cellPx + cellPx / 2;
+        var ty = path[pi][1] * cellPx + cellPx / 2;
+        if (pi === 0) ctx.moveTo(tx, ty);
+        else ctx.lineTo(tx, ty);
+      }
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // 外层柔光
+      ctx.lineWidth = Math.max(3, cellPx * 0.24);
+      ctx.strokeStyle = 'rgba(110, 170, 235, .2)';
+      ctx.shadowColor = 'rgba(143, 192, 234, .55)';
+      ctx.shadowBlur = cellPx * 0.8;
+      ctx.stroke();
+
+      // 内层亮线
+      ctx.lineWidth = Math.max(1.2, cellPx * 0.09);
+      ctx.strokeStyle = 'rgba(186, 224, 255, .9)';
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // 小人：奶油色小圆脸（带落地影、浮空微动、高光）
+    var float = Math.sin(ts / 300) * cellPx * 0.03;
+    var cx = px * cellPx + cellPx / 2;
+    var cy = py * cellPx + cellPx / 2 + float;
+    var r = cellPx * 0.3;
+
+    // 落地影
+    ctx.fillStyle = 'rgba(0, 0, 0, .4)';
+    ctx.beginPath();
+    ctx.ellipse(cx, py * cellPx + cellPx * 0.8, r * 0.8, r * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 脸
+    ctx.save();
+    ctx.shadowColor = 'rgba(255, 205, 92, .55)';
+    ctx.shadowBlur = cellPx * 0.55;
+    var g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r);
+    g.addColorStop(0, '#fff8e0');
+    g.addColorStop(0.55, '#ffd766');
+    g.addColorStop(1, '#f0a51e');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 高光点
+    ctx.fillStyle = 'rgba(255, 255, 255, .8)';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.36, cy - r * 0.42, r * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 腮红
+    ctx.fillStyle = 'rgba(255, 122, 122, .45)';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.58, cy + r * 0.22, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + r * 0.58, cy + r * 0.22, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 眼睛
+    ctx.fillStyle = '#3d2b12';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.33, cy - r * 0.08, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + r * 0.33, cy - r * 0.08, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 微笑
+    ctx.strokeStyle = '#3d2b12';
+    ctx.lineWidth = Math.max(1, r * 0.13);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.14, r * 0.4, Math.PI * 0.2, Math.PI * 0.8);
+    ctx.stroke();
+  }
+
+  /* ---------- 主循环 ---------- */
+  function loop(ts) {
+    draw(ts);
+    updateClock();
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------- 键盘 ---------- */
+  var KEY_DIRS = {
+    arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0]
+  };
+
+  window.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    var dir = KEY_DIRS[e.key.toLowerCase()];
+    if (!dir) return;
+
+    e.preventDefault();                 // 阻止方向键滚动页面
+
+    var now = performance.now();
+    if (now - lastKeyAt < 60) return;   // 长按防飞键
+    lastKeyAt = now;
+
+    move(dir[0], dir[1]);
+  }, { passive: false });
+
+  /* ---------- 按钮 ---------- */
+  document.getElementById('regen').addEventListener('click', newGame);
+  document.getElementById('again').addEventListener('click', newGame);
+
+  // 点一下遮罩空白处可收起面板，方便看完整轨迹
+  overlayEl.addEventListener('click', function (e) {
+    if (e.target === overlayEl) overlayEl.classList.remove('show');
+  });
+
+  /* ---------- 难度切换 ---------- */
+  var sizeBtns = document.querySelectorAll('.seg-btn');
+
+  for (var k = 0; k < sizeBtns.length; k++) {
+    sizeBtns[k].addEventListener('click', function () {
+      var next = Number(this.getAttribute('data-size'));
+      if (next === N) return;          // 点当前难度不重开，避免误丢进度
+
+      N = next;
+      for (var m = 0; m < sizeBtns.length; m++) {
+        sizeBtns[m].classList.toggle('is-active', sizeBtns[m] === this);
+      }
+      newGame();
+    });
+  }
+
+  /* ---------- 启动 ---------- */
+  window.addEventListener('resize', resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(boardEl);
+
+  newGame();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
