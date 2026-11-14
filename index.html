@@ -291,7 +291,7 @@
     <button class="btn dbtn right" type="button" data-dir="1,0" aria-label="右">→</button>
   </div>
 
-  <div class="hint hint-kbd">方向键 或 W A S D 移动 · 从左上角出发，抵达右下角</div>
+  <div class="hint hint-kbd">方向键 或 W A S D 移动 · 吃掉小飞虫减 3 秒 · 从左上洞穴钻到右下出口</div>
   <div class="hint hint-touch">点下方方向按钮移动 · 从左上角出发，抵达右下角</div>
 </div>
 
@@ -327,6 +327,11 @@
   var accumMs = 0;            // 已累计毫秒
   var won = false;
   var path = [];              // 走过的格子坐标，用于通关后画轨迹
+  var bugs = [];              // 小飞虫：{ x, y, ph }
+  var bonusMs = 0;            // 吃掉飞虫累计减掉的用时
+  var splashAt = -1;          // 跃入水中特效开始时间，-1 表示没有
+  var toastText = '';         // 吃到飞虫时冒出的提示文字
+  var toastAt = -1;           // 提示文字出现时间
   var dir = 1;                // 小青蛙朝向：1 朝右，-1 朝左
   var renderX = 0, renderY = 0;  // 小青蛙实际显示位置（浮点）
   var lastMoveAt = 0;            // 上次移动时间，用于判断是否在动
@@ -400,6 +405,34 @@
     }
   }
 
+  /* ---------- 小飞虫 ---------- */
+  var BUG_BONUS_MS = 3000;      // 每吃掉一只，用时减 3 秒
+
+  function spawnBugs() {
+    var list = [];
+    var want = Math.max(4, Math.round(N * N * 0.032));
+    var guard = 0;
+
+    while (list.length < want && guard < 600) {
+      guard++;
+      var idx = (Math.random() * N * N) | 0;
+      var bx = idx % N;
+      var by = (idx / N) | 0;
+
+      if (bx === 0 && by === 0) continue;                 // 起点不放
+      if (bx === N - 1 && by === N - 1) continue;         // 终点不放
+
+      var dup = false;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].x === bx && list[i].y === by) { dup = true; break; }
+      }
+      if (dup) continue;
+
+      list.push({ x: bx, y: by, ph: Math.random() * 6.283 });
+    }
+    return list;
+  }
+
   /* ---------- 新开一局 ---------- */
   function newGame() {
     generateMaze();
@@ -416,6 +449,11 @@
     accumMs = 0;
     won = false;
     path = [[0, 0]];           // 轨迹从起点开始
+    bugs = spawnBugs();        // 随机撒一把小飞虫
+    bonusMs = 0;
+    splashAt = -1;
+    toastAt = -1;
+    toastText = '';
     lastKeyAt = 0;
     lastTimeText = '';
 
@@ -456,6 +494,17 @@
     path.push([px, py]);
     stepsEl.textContent = String(steps);
 
+    // 踩到小飞虫就一口吞掉，用时减 3 秒
+    for (var b = 0; b < bugs.length; b++) {
+      if (bugs[b].x === px && bugs[b].y === py) {
+        bugs.splice(b, 1);
+        bonusMs += BUG_BONUS_MS;
+        toastText = '-' + (BUG_BONUS_MS / 1000) + 's';
+        toastAt = performance.now();
+        break;
+      }
+    }
+
     if (px === N - 1 && py === N - 1) win();
   }
 
@@ -463,6 +512,7 @@
     won = true;
     accumMs = elapsed();
     timerOn = false;
+    splashAt = performance.now();   // 触发跃入水中的水花
 
     var prevBest = loadBest();
     if (prevBest === null || steps < prevBest) {
@@ -478,7 +528,8 @@
 
   /* ---------- 计时 ---------- */
   function elapsed() {
-    return timerOn ? accumMs + (performance.now() - t0) : accumMs;
+    var raw = timerOn ? accumMs + (performance.now() - t0) : accumMs;
+    return Math.max(0, raw - bonusMs);   // 吃飞虫减掉的时长
   }
 
   function fmt(ms) {
@@ -687,38 +738,57 @@
     // 贴静态层（地面 + 墙）
     if (bgCanvas.width > 0) ctx.drawImage(bgCanvas, 0, 0, S, S);
 
-    // 终点：金色光晕 + 呼吸环 + 渐变方块
+    // 终点：透光的洞穴出口
     var pulse = 0.5 + 0.5 * Math.sin(ts / 420);
     var ex = (N - 1) * cellPx + cellPx / 2;
     var ey = (N - 1) * cellPx + cellPx / 2;
 
-    var halo = ctx.createRadialGradient(ex, ey, cellPx * 0.04, ex, ey, cellPx * 0.9);
-    halo.addColorStop(0, 'rgba(245, 190, 90, ' + (0.34 + 0.16 * pulse).toFixed(3) + ')');
-    halo.addColorStop(1, 'rgba(245, 190, 90, 0)');
+    var halo = ctx.createRadialGradient(ex, ey, cellPx * 0.05, ex, ey, cellPx * 0.95);
+    halo.addColorStop(0, 'rgba(140, 240, 215, ' + (0.26 + 0.14 * pulse).toFixed(3) + ')');
+    halo.addColorStop(1, 'rgba(140, 240, 215, 0)');
     ctx.fillStyle = halo;
     ctx.fillRect(ex - cellPx, ey - cellPx, cellPx * 2, cellPx * 2);
 
+    // 洞口外围的岩石
     ctx.beginPath();
-    ctx.arc(ex, ey, cellPx * (0.3 + 0.045 * pulse), 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 218, 150, ' + (0.5 + 0.25 * pulse).toFixed(3) + ')';
-    ctx.lineWidth = Math.max(1.2, cellPx * 0.05);
+    ctx.ellipse(ex, ey, cellPx * 0.37, cellPx * 0.34, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#27463f';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 190, 168, .35)';
+    ctx.lineWidth = Math.max(1, cellPx * 0.035);
     ctx.stroke();
 
-    var eg = ctx.createLinearGradient(ex - cellPx * 0.2, ey - cellPx * 0.2,
-                                      ex + cellPx * 0.2, ey + cellPx * 0.2);
-    eg.addColorStop(0, '#ffe9b0');
-    eg.addColorStop(1, '#c98430');
-    ctx.fillStyle = eg;
-    roundRect(ctx, ex - cellPx * 0.2, ey - cellPx * 0.2, cellPx * 0.4, cellPx * 0.4, cellPx * 0.12);
+    // 洞里透出来的光
+    var hole = ctx.createRadialGradient(ex, ey - cellPx * 0.03, cellPx * 0.02,
+                                        ex, ey, cellPx * 0.3);
+    hole.addColorStop(0, 'rgba(215, 255, 245, ' + (0.7 + 0.22 * pulse).toFixed(3) + ')');
+    hole.addColorStop(0.55, 'rgba(96, 205, 180, .6)');
+    hole.addColorStop(1, 'rgba(12, 52, 52, .92)');
+    ctx.fillStyle = hole;
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, cellPx * 0.28, cellPx * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // 起点（刻在桌面上的浅痕）
-    ctx.fillStyle = 'rgba(70, 44, 24, .35)';
-    roundRect(ctx, cellPx * 0.31, cellPx * 0.31, cellPx * 0.38, cellPx * 0.38, cellPx * 0.11);
+    // 起点：幽深的洞穴入口
+    var sx = cellPx / 2, sy = cellPx / 2;
+
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, cellPx * 0.37, cellPx * 0.34, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#27463f';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(236, 206, 160, .35)';
-    ctx.lineWidth = Math.max(1, cellPx * 0.03);
+    ctx.strokeStyle = 'rgba(120, 190, 168, .28)';
+    ctx.lineWidth = Math.max(1, cellPx * 0.035);
     ctx.stroke();
+
+    var shole = ctx.createRadialGradient(sx, sy - cellPx * 0.04, cellPx * 0.02,
+                                         sx, sy, cellPx * 0.29);
+    shole.addColorStop(0, 'rgba(2, 10, 12, .96)');
+    shole.addColorStop(0.65, 'rgba(8, 30, 32, .92)');
+    shole.addColorStop(1, 'rgba(38, 78, 70, .85)');
+    ctx.fillStyle = shole;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, cellPx * 0.28, cellPx * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     // 通关后：把走过的轨迹连成一条发光线
     if (won && path.length > 1) {
@@ -878,7 +948,7 @@
     // 脚下的尘土（只在贴地时出现）
     if (running && airT < 0.3) {
       var dust = 0.16 + 0.14 * Math.abs(Math.sin(runPhase));
-      ctx.fillStyle = 'rgba(120, 88, 56, ' + dust.toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(175, 225, 215, ' + dust.toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(-r * 0.8, r * 0.8, r * 0.11, 0, Math.PI * 2);
       ctx.fill();
@@ -887,6 +957,114 @@
       ctx.fill();
     }
 
+    ctx.restore();
+
+    // 小飞虫
+    drawBugs(ts);
+
+    // 跃入水中的水花
+    drawSplash(ts);
+
+    // 吃到飞虫的飘字
+    drawToast(ts);
+  }
+
+  /* ---------- 小飞虫 ---------- */
+  function drawBugs(ts) {
+    for (var i = 0; i < bugs.length; i++) {
+      var b = bugs[i];
+      var size = Math.max(2, cellPx * 0.12);
+      var bx = b.x * cellPx + cellPx / 2 + Math.cos(ts / 260 + b.ph) * cellPx * 0.1;
+      var by = b.y * cellPx + cellPx / 2 + Math.sin(ts / 320 + b.ph) * cellPx * 0.09;
+      var flap = Math.abs(Math.sin(ts / 45 + b.ph));
+
+      // 周身柔光
+      var gl = ctx.createRadialGradient(bx, by, 0, bx, by, size * 2.6);
+      gl.addColorStop(0, 'rgba(255, 226, 140, .28)');
+      gl.addColorStop(1, 'rgba(255, 226, 140, 0)');
+      ctx.fillStyle = gl;
+      ctx.fillRect(bx - size * 2.6, by - size * 2.6, size * 5.2, size * 5.2);
+
+      // 翅膀（快速扇动）
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#e8fbff';
+      ctx.beginPath();
+      ctx.ellipse(bx - size * 0.5, by - size * 0.55,
+                  size * 0.55, size * 0.28 * (0.4 + 0.6 * flap), -0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(bx + size * 0.5, by - size * 0.55,
+                  size * 0.55, size * 0.28 * (0.4 + 0.6 * flap), 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // 身体
+      ctx.fillStyle = '#ffd76a';
+      ctx.beginPath();
+      ctx.ellipse(bx, by, size * 0.5, size * 0.72, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 头
+      ctx.fillStyle = '#3a3320';
+      ctx.beginPath();
+      ctx.arc(bx, by - size * 0.75, size * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /* ---------- 跃入水中的水花 ---------- */
+  function drawSplash(ts) {
+    if (splashAt < 0) return;
+    var t = (ts - splashAt) / 900;
+    if (t > 1) return;
+
+    var cx = (N - 1) * cellPx + cellPx / 2;
+    var cy = (N - 1) * cellPx + cellPx / 2;
+
+    // 一圈圈扩散的涟漪
+    for (var i = 0; i < 3; i++) {
+      var tt = t - i * 0.13;
+      if (tt <= 0 || tt >= 1) continue;
+      var rr = cellPx * (0.12 + tt * 0.8);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(200, 255, 244, ' + ((1 - tt) * 0.55).toFixed(3) + ')';
+      ctx.lineWidth = Math.max(1, cellPx * 0.05 * (1 - tt));
+      ctx.stroke();
+    }
+
+    // 溅起的水珠
+    for (var d = 0; d < 12; d++) {
+      var ang = (d / 12) * Math.PI * 2 + 0.4;
+      var reach = cellPx * (0.35 + (d % 4) * 0.1);
+      var dx = cx + Math.cos(ang) * reach * t;
+      var dy = cy + Math.sin(ang) * reach * t * 0.7 - cellPx * 0.55 * Math.sin(Math.PI * t);
+      var rad = Math.max(0.8, cellPx * 0.05 * (1 - t));
+      ctx.fillStyle = 'rgba(215, 255, 248, ' + ((1 - t) * 0.85).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(dx, dy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /* ---------- 吃掉飞虫的飘字 ---------- */
+  function drawToast(ts) {
+    if (toastAt < 0) return;
+    var age = ts - toastAt;
+    if (age > 900) return;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - age / 900;
+    ctx.fillStyle = '#b6ffd2';
+    ctx.font = '700 ' + Math.max(11, cellPx * 0.34) +
+               'px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(60, 255, 150, .8)';
+    ctx.shadowBlur = 8;
+    ctx.fillText(toastText,
+                 renderX * cellPx + cellPx / 2,
+                 renderY * cellPx + cellPx / 2 - cellPx * 0.8 - age * 0.035);
     ctx.restore();
   }
 
