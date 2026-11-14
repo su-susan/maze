@@ -153,7 +153,7 @@
     aspect-ratio: 1 / 1;
     border-radius: 16px;
     overflow: hidden;
-    background: #6b4423;
+    background: #062128;
     box-shadow:
       0 0 0 1px rgba(160, 118, 74, .35),
       0 0 0 6px rgba(58, 36, 22, .55),
@@ -516,7 +516,7 @@
     draw(performance.now());
   }
 
-  /* ---------- 静态层：地面 + 立体墙（只重绘一次） ---------- */
+  /* ---------- 静态层：水塘底 + 水草围墙（只重绘一次） ---------- */
   function buildStaticLayer(size, dpr) {
     bgCanvas.width = Math.round(size * dpr);
     bgCanvas.height = Math.round(size * dpr);
@@ -527,78 +527,144 @@
 
     var S = cellPx * N;
 
-    // 木桌面：暖棕渐变 + 木纹
-    var base = c.createRadialGradient(S * 0.38, S * 0.3, S * 0.04, S * 0.5, S * 0.52, S * 0.9);
-    base.addColorStop(0, '#a97442');
-    base.addColorStop(0.55, '#8a5a33');
-    base.addColorStop(1, '#4e3018');
+    // 水塘底：由浅到深的青绿渐变
+    var base = c.createRadialGradient(S * 0.36, S * 0.28, S * 0.04, S * 0.5, S * 0.52, S * 0.95);
+    base.addColorStop(0, '#15585c');
+    base.addColorStop(0.5, '#0d3f47');
+    base.addColorStop(1, '#062128');
     c.fillStyle = base;
     c.fillRect(0, 0, S, S);
 
-    // 木纹：竖向深浅曲线，随机但只在重建时画一次
-    for (var wi = 0; wi < 70; wi++) {
-      var wx = Math.random() * S;
+    // 池底泥沙斑块：深浅不一，避免死板的纯色
+    for (var bi = 0; bi < 26; bi++) {
+      var bx = Math.random() * S;
+      var by = Math.random() * S;
+      var br = S * (0.03 + Math.random() * 0.08);
+      var blob = c.createRadialGradient(bx, by, 0, bx, by, br);
+      blob.addColorStop(0, Math.random() > 0.45
+        ? 'rgba(3, 24, 26, .22)'
+        : 'rgba(46, 108, 96, .16)');
+      blob.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      c.fillStyle = blob;
+      c.fillRect(bx - br, by - br, br * 2, br * 2);
+    }
+
+    // 水面透下来的光斑（焦散），用叠加模式提亮
+    c.globalCompositeOperation = 'lighter';
+    for (var ci = 0; ci < 9; ci++) {
+      var lx = Math.random() * S;
+      var ly = Math.random() * S;
+      var lr = S * (0.06 + Math.random() * 0.1);
+      var glow = c.createRadialGradient(lx, ly, 0, lx, ly, lr);
+      glow.addColorStop(0, 'rgba(150, 235, 205, .085)');
+      glow.addColorStop(1, 'rgba(150, 235, 205, 0)');
+      c.fillStyle = glow;
+      c.fillRect(lx - lr, ly - lr, lr * 2, lr * 2);
+    }
+    c.globalCompositeOperation = 'source-over';
+
+    // 水面波纹：一层层很淡的横向波线
+    for (var wi = 0; wi < 16; wi++) {
+      var wy = (wi + 0.5) * (S / 16) + (Math.random() - 0.5) * S * 0.04;
+      var amp = S * (0.002 + Math.random() * 0.006);
       c.beginPath();
-      c.moveTo(wx, 0);
-      c.bezierCurveTo(
-        wx + (Math.random() - 0.5) * S * 0.08, S * 0.33,
-        wx + (Math.random() - 0.5) * S * 0.08, S * 0.66,
-        wx + (Math.random() - 0.5) * S * 0.05, S
-      );
-      c.strokeStyle = 'rgba(58, 32, 14, ' + (0.04 + Math.random() * 0.12).toFixed(3) + ')';
-      c.lineWidth = 0.8 + Math.random() * 3.2;
+      c.moveTo(0, wy);
+      for (var wx = 0; wx < S; wx += S / 14) {
+        var nx = Math.min(S, wx + S / 14);
+        var lift = (Math.floor(wx / (S / 14)) % 2 === 0) ? amp : -amp;
+        c.quadraticCurveTo(wx + S / 28, wy + lift, nx, wy);
+      }
+      c.strokeStyle = 'rgba(190, 245, 230, .035)';
+      c.lineWidth = 1;
       c.stroke();
     }
 
     // 极淡棋盘格，帮助感知格子
-    c.fillStyle = 'rgba(255, 236, 200, .03)';
+    c.fillStyle = 'rgba(180, 240, 220, .022)';
     for (var y = 0; y < N; y++) {
       for (var x = 0; x < N; x++) {
         if ((x + y) % 2 === 0) c.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
       }
     }
 
-    // 把所有墙线合成一条路径
+    // 收集所有墙段（只取上 + 左，右侧和下侧边框单独补，避免重复绘制）
     var lw = Math.max(1.8, Math.min(cellPx * 0.14, 6));
-    c.beginPath();
+    var segs = [];
     for (var gy = 0; gy < N; gy++) {
       for (var gx = 0; gx < N; gx++) {
         var wb = walls[gy * N + gx];
         var x0 = gx * cellPx, y0 = gy * cellPx;
         var x1 = x0 + cellPx, y1 = y0 + cellPx;
-        if (wb & TOP)    { c.moveTo(x0, y0); c.lineTo(x1, y0); }
-        if (wb & LEFT)   { c.moveTo(x0, y0); c.lineTo(x0, y1); }
-        if (wb & RIGHT)  { c.moveTo(x1, y0); c.lineTo(x1, y1); }
-        if (wb & BOTTOM) { c.moveTo(x0, y1); c.lineTo(x1, y1); }
+        if (wb & TOP)  segs.push([x0, y0, x1, y0]);
+        if (wb & LEFT) segs.push([x0, y0, x0, y1]);
+        if (gx === N - 1 && (wb & RIGHT))  segs.push([x1, y0, x1, y1]);
+        if (gy === N - 1 && (wb & BOTTOM)) segs.push([x0, y1, x1, y1]);
       }
+    }
+
+    c.beginPath();
+    for (var si = 0; si < segs.length; si++) {
+      c.moveTo(segs[si][0], segs[si][1]);
+      c.lineTo(segs[si][2], segs[si][3]);
     }
     c.lineCap = 'round';
     c.lineJoin = 'round';
 
-    // 1) 底部投影：让木条看起来立起来
+    // 1) 水下投影：让水草有一点厚度
     c.save();
-    c.translate(0, lw * 0.6);
-    c.lineWidth = lw * 1.2;
-    c.strokeStyle = 'rgba(24, 12, 4, .55)';
+    c.translate(0, lw * 0.55);
+    c.lineWidth = lw * 1.25;
+    c.strokeStyle = 'rgba(2, 18, 16, .5)';
     c.stroke();
     c.restore();
 
-    // 2) 木条主体（深棕）
+    // 2) 水草主体（深绿）
     c.save();
     c.lineWidth = lw;
-    c.strokeStyle = '#4a2c17';
-    c.shadowColor = 'rgba(40, 20, 8, .45)';
-    c.shadowBlur = lw * 1.4;
+    c.strokeStyle = '#2f6b3c';
+    c.shadowColor = 'rgba(3, 30, 20, .55)';
+    c.shadowBlur = lw * 1.6;
     c.stroke();
     c.restore();
 
-    // 3) 顶部高光：受光面
+    // 3) 受光面：偏亮的草绿
     c.save();
-    c.translate(0, -lw * 0.34);
-    c.lineWidth = Math.max(1, lw * 0.32);
-    c.strokeStyle = 'rgba(226, 186, 132, .5)';
+    c.translate(0, -lw * 0.3);
+    c.lineWidth = Math.max(1, lw * 0.34);
+    c.strokeStyle = 'rgba(139, 205, 122, .55)';
     c.stroke();
     c.restore();
+
+    // 4) 沿墙长出来的叶片：按线段等距撒点，左右交替伸出
+    var LEAF = ['#3f8a4c', '#4e9d58', '#2f7239', '#63b06a'];
+    var leafSize = Math.max(1.8, Math.min(lw * 0.72, 4.2));
+
+    for (var li = 0; li < segs.length; li++) {
+      var sx = segs[li][0], sy = segs[li][1];
+      var ex = segs[li][2], ey = segs[li][3];
+      var segLen = Math.sqrt((ex - sx) * (ex - sx) + (ey - sy) * (ey - sy));
+      var ang = Math.atan2(ey - sy, ex - sx);
+      var count = Math.max(1, Math.round(segLen / (lw * 3)));
+
+      for (var li2 = 1; li2 <= count; li2++) {
+        var t = li2 / (count + 1);
+        var lpx = sx + (ex - sx) * t;
+        var lpy = sy + (ey - sy) * t;
+        var side = (li + li2) % 2 === 0 ? 1 : -1;
+        var spread = (0.55 + Math.random() * 0.55) * side;
+
+        c.save();
+        c.translate(lpx, lpy);
+        c.rotate(ang + spread * Math.PI * 0.5);
+        c.beginPath();
+        c.ellipse(leafSize * 0.7, 0, leafSize, leafSize * 0.42, 0, 0, Math.PI * 2);
+        c.fillStyle = LEAF[(Math.random() * LEAF.length) | 0];
+        c.globalAlpha = 0.75 + Math.random() * 0.25;
+        c.fill();
+        c.restore();
+      }
+    }
+    c.globalAlpha = 1;
   }
 
   /* ---------- 绘制 ---------- */
