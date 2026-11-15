@@ -148,6 +148,29 @@
   .btn:hover { filter: brightness(1.12); }
   .btn:active { transform: translateY(1px); }
 
+  /* 音效开关：小一号的次要按钮 */
+  .sound {
+    border: 1px solid rgba(160, 118, 74, .34);
+    border-radius: 10px;
+    padding: 9px 11px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #c6a887;
+    background: rgba(58, 36, 22, .75);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .18s, background .18s, border-color .18s;
+  }
+
+  .sound:hover { color: #f4e3c8; background: rgba(255, 240, 220, .08); }
+
+  .sound[aria-pressed="false"] {
+    color: #7f6647;
+    border-color: rgba(160, 118, 74, .18);
+  }
+
   .board {
     position: relative;
     aspect-ratio: 1 / 1;
@@ -270,6 +293,7 @@
       <div class="stat"><span class="label">最佳</span><span class="value" id="best">—</span></div>
       <div class="stat"><span class="label">用时</span><span class="value" id="time">00:00.0</span></div>
     </div>
+    <button class="sound" id="sound" type="button" aria-pressed="true">有声</button>
     <button class="btn" id="regen" type="button">重新生成</button>
   </div>
 
@@ -342,6 +366,76 @@
   var jumpCarry = 0;             // 被打断时的腾空系数，保证连跳不断档
   var lastKeyAt = 0;
   var lastTimeText = '';
+
+  /* ---------- 音效：用浏览器自带的合成器，不需要音频文件 ---------- */
+  var soundOn = true;
+  var actx = null;
+
+  function audioCtx() {
+    if (!actx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;            // 老浏览器不支持就安静跳过
+      actx = new AC();
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+
+  // 吹一声：freq 起始频率，dur 时长（秒），type 音色，vol 音量，slideTo 滑到的频率
+  function tone(freq, dur, type, vol, slideTo) {
+    if (!soundOn) return;
+    var a = audioCtx();
+    if (!a) return;
+
+    var o = a.createOscillator();
+    var g = a.createGain();
+
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, a.currentTime);
+    if (slideTo) {
+      o.frequency.exponentialRampToValueAtTime(slideTo, a.currentTime + dur);
+    }
+
+    // 快速淡入、缓慢淡出，避免"啪"的爆音
+    g.gain.setValueAtTime(0.0001, a.currentTime);
+    g.gain.linearRampToValueAtTime(vol, a.currentTime + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+
+    o.connect(g);
+    g.connect(a.destination);
+    o.start();
+    o.stop(a.currentTime + dur + 0.03);
+  }
+
+  // 通关：四个音符依次响起
+  function winFanfare() {
+    var notes = [523.25, 659.25, 783.99, 1046.5];
+    for (var i = 0; i < notes.length; i++) {
+      (function (f, delay) {
+        window.setTimeout(function () { tone(f, 0.26, 'triangle', 0.06); }, delay);
+      })(notes[i], i * 105);
+    }
+  }
+
+  var soundBtn = document.getElementById('sound');
+
+  function applySound(on) {
+    soundOn = on;
+    soundBtn.textContent = on ? '有声' : '无声';
+    soundBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  try {
+    applySound(window.localStorage.getItem('maze_sound_on') !== '0');
+  } catch (e) { /* 读不了就保持默认有声 */ }
+
+  soundBtn.addEventListener('click', function () {
+    applySound(!soundOn);
+    try {
+      window.localStorage.setItem('maze_sound_on', soundOn ? '1' : '0');
+    } catch (e) { /* 存不了不影响玩 */ }
+    if (soundOn) tone(660, 0.1, 'sine', 0.05);   // 打开时给个应答
+  });
 
   /* ---------- 最佳步数（按难度分别保存） ---------- */
   function bestKey() {
@@ -477,7 +571,10 @@
     var cur = py * N + px;
     var w = dx === 1 ? RIGHT : dx === -1 ? LEFT : dy === 1 ? BOTTOM : TOP;
 
-    if (walls[cur] & w) return;   // 撞墙，走不过去
+    if (walls[cur] & w) {         // 撞墙，走不过去
+      tone(110, 0.05, 'sine', 0.035);
+      return;
+    }
 
     px += dx;
     py += dy;
@@ -494,6 +591,8 @@
     path.push([px, py]);
     stepsEl.textContent = String(steps);
 
+    tone(430 + Math.random() * 60, 0.07, 'triangle', 0.045, 620);   // 起跳的"呱"
+
     // 踩到小飞虫就一口吞掉，用时减 3 秒
     for (var b = 0; b < bugs.length; b++) {
       if (bugs[b].x === px && bugs[b].y === py) {
@@ -501,6 +600,7 @@
         bonusMs += BUG_BONUS_MS;
         toastText = '-' + (BUG_BONUS_MS / 1000) + 's';
         toastAt = performance.now();
+        tone(1050, 0.14, 'square', 0.05, 1600);   // 咬到飞虫的"叮"
         break;
       }
     }
@@ -524,6 +624,7 @@
     }
 
     overlayEl.classList.add('show');
+    winFanfare();
   }
 
   /* ---------- 计时 ---------- */
