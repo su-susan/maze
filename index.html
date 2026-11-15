@@ -246,18 +246,23 @@
   @media (pointer: coarse) {
     .dpad {
       display: grid;
-      grid-template-columns: repeat(3, 58px);
-      gap: 8px;
+      grid-template-columns: repeat(3, 72px);
+      gap: 10px;
       justify-content: center;
       margin-top: 14px;
     }
     .dpad .dbtn {
       padding: 0;
-      height: 52px;
-      font-size: 20px;
+      height: 64px;
+      font-size: 24px;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      transition: filter .14s ease, transform .14s ease;
+    }
+    .dpad .dbtn.is-pressed {
+      filter: brightness(0.78);
+      transform: scale(0.92);
     }
     .dpad .up    { grid-column: 2; grid-row: 1; }
     .dpad .left  { grid-column: 1; grid-row: 2; }
@@ -366,6 +371,8 @@
   var jumpCarry = 0;             // 被打断时的腾空系数，保证连跳不断档
   var lastKeyAt = 0;
   var lastTimeText = '';
+  var mazeVersion = 0;        // 迷宫版本号：每次重新生成 +1
+  var staticKey = '';         // 当前静态层对应的「尺寸|清晰度|难度|迷宫版本」
 
   /* ---------- 音效：用浏览器自带的合成器，不需要音频文件 ---------- */
   var soundOn = true;
@@ -463,6 +470,7 @@
 
   /* ---------- 迷宫生成：递归回溯 ---------- */
   function generateMaze() {
+    mazeVersion++;              // 换迷宫了，静态层必须重建
     walls = new Uint8Array(N * N).fill(TOP | RIGHT | BOTTOM | LEFT);
     var visited = new Uint8Array(N * N);
     var stack = [0];
@@ -610,17 +618,23 @@
 
   function win() {
     won = true;
-    accumMs = elapsed();
-    timerOn = false;
+    // 只把真实跑表时间并进 accumMs；吃虫减时统一由 elapsed() 扣一次。
+    // 原来 accumMs = elapsed() 已经扣过奖励，HUD 每帧再调 elapsed() 又扣一遍，
+    // 通关后顶栏用时会比结算面板少 3 秒/只虫
+    if (timerOn) {
+      accumMs += performance.now() - t0;
+      timerOn = false;
+    }
     splashAt = performance.now();   // 触发跃入水中的水花
 
+    var used = elapsed();
     var prevBest = loadBest();
     if (prevBest === null || steps < prevBest) {
       saveBest(steps);
       bestEl.textContent = String(steps);
-      resultEl.textContent = '共 ' + steps + ' 步 · 新纪录！用时 ' + fmt(accumMs);
+      resultEl.textContent = '共 ' + steps + ' 步 · 新纪录！用时 ' + fmt(used);
     } else {
-      resultEl.textContent = '共 ' + steps + ' 步 · 最佳 ' + prevBest + ' 步 · 用时 ' + fmt(accumMs);
+      resultEl.textContent = '共 ' + steps + ' 步 · 最佳 ' + prevBest + ' 步 · 用时 ' + fmt(used);
     }
 
     overlayEl.classList.add('show');
@@ -658,6 +672,12 @@
     if (size <= 0) return;
 
     var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+
+    // window.resize 和 ResizeObserver 会各触发一次；尺寸/清晰度/难度/迷宫都没变就不重建
+    var key = size + '|' + dpr + '|' + N + '|' + mazeVersion;
+    if (key === staticKey) return;
+    staticKey = key;
+
     cellPx = size / N;
     canvas.width = Math.round(size * dpr);
     canvas.height = Math.round(size * dpr);
@@ -1224,8 +1244,18 @@
   for (var b = 0; b < dpadBtns.length; b++) {
     dpadBtns[b].addEventListener('pointerdown', function (e) {
       e.preventDefault();               // 阻止滚动、双击缩放和多余点击
+      this.classList.add('is-pressed');
       var dir = this.getAttribute('data-dir').split(',');
       move(Number(dir[0]), Number(dir[1]));
+    });
+    dpadBtns[b].addEventListener('pointerup', function () {
+      this.classList.remove('is-pressed');
+    });
+    dpadBtns[b].addEventListener('pointercancel', function () {
+      this.classList.remove('is-pressed');
+    });
+    dpadBtns[b].addEventListener('pointerleave', function () {
+      this.classList.remove('is-pressed');
     });
   }
 
